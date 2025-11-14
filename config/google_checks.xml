@@ -1,0 +1,88 @@
+<code_scheme name="GoogleStyle" version="173">
+    <JavaCodeStyleSettings>
+        <!-- Javadoc settings -->
+        <option name="JD_ALIGN_PARAM_COMMENTS" value="true" />
+        <option name="JD_INDENT_ON_CONTINUATION" value="true" />
+        <option name="JD_KEEP_BLANK_LINES" value="1" />
+        <option name="JD_PARAM_TAB_SIZE" value="2" />
+    </JavaCodeStyleSettings>
+
+    <codeStyleSettings language="JAVA">
+        <!-- General formatting -->
+        <option name="RIGHT_MARGIN" value="100" />
+        <option name="TAB_SIZE" value="2" />
+        <option name="INDENT_SIZE" value="2" />
+        <option name="CONTINUATION_INDENT_SIZE" value="4" />
+        <option name="USE_TAB_CHARACTER" value="false" />
+        <option name="KEEP_LINE_BREAKS" value="true" />
+        <option name="KEEP_FIRST_COLUMN_COMMENT" value="true" />
+        <option name="KEEP_BLANK_LINES_IN_CODE" value="1" />
+
+        <!-- Wrapping and braces -->
+        <option name="BRACE_STYLE" value="end_of_line" />
+        <option name="METHOD_BRACE_STYLE" value="end_of_line" />
+        <option name="CLASS_BRACE_STYLE" value="end_of_line" />
+        <option name="DO_WHILE_BRACE_STYLE" value="end_of_line" />
+        <option name="IF_BRACE_FORCE" value="true" />
+        <option name="FOR_BRACE_FORCE" value="true" />
+        <option name="WHILE_BRACE_FORCE" value="true" />
+        <option name="CATCH_BRACE_FORCE" value="true" />
+        <option name="METHOD_CALL_ARGUMENTS_WRAP" value="chop_down_if_long" />
+        <option name="METHOD_PARAMETERS_WRAP" value="chop_down_if_long" />
+        <option name="ARRAY_INITIALIZER_WRAP" value="chop_down_if_long" />
+
+        <!-- Alignment -->
+        <option name="ALIGN_MULTILINE_PARAMETERS" value="true" />
+        <option name="ALIGN_MULTILINE_PARAMETERS_IN_CALLS" value="true" />
+        <option name="ALIGN_MULTILINE_BINARY_OPERATION" value="true" />
+        <option name="ALIGN_MULTILINE_ASSIGNMENT" value="true" />
+        <option name="ALIGN_MULTILINE_TERNARY_OPERATION" value="true" />
+
+        <!-- Spaces -->
+        <option name="SPACE_BEFORE_METHOD_PARENTHESES" value="false" />
+        <option name="SPACE_BEFORE_METHOD_CALL_PARENTHESES" value="false" />
+        <option name="SPACE_BEFORE_IF_PARENTHESES" value="true" />
+        <option name="SPACE_BEFORE_FOR_PARENTHESES" value="true" />
+        <option name="SPACE_BEFORE_WHILE_PARENTHESES" value="true" />
+        <option name="SPACE_BEFORE_SWITCH_PARENTHESES" value="true" />
+        <option name="SPACE_BEFORE_CATCH_PARENTHESES" value="true" />
+        <option name="SPACE_WITHIN_METHOD_PARENTHESES" value="false" />
+        <option name="SPACE_WITHIN_METHOD_CALL_PARENTHESES" value="false" />
+        <option name="SPACE_WITHIN_IF_PARENTHESES" value="false" />
+        <option name="SPACE_WITHIN_FOR_PARENTHESES" value="false" />
+        <option name="SPACE_WITHIN_WHILE_PARENTHESES" value="false" />
+        <option name="SPACE_WITHIN_SWITCH_PARENTHESES" value="false" />
+        <option name="SPACE_WITHIN_CATCH_PARENTHESES" value="false" />
+        <option name="SPACE_AROUND_ASSIGNMENT_OPERATORS" value="true" />
+        <option name="SPACE_AROUND_LOGICAL_OPERATORS" value="true" />
+        <option name="SPACE_AROUND_EQUALITY_OPERATORS" value="true" />
+        <option name="SPACE_AROUND_RELATIONAL_OPERATORS" value="true" />
+        <option name="SPACE_AROUND_BINARY_OPERATORS" value="true" />
+        <option name="SPACE_AFTER_COMMA" value="true" />
+        <option name="SPACE_AFTER_SEMICOLON" value="true" />
+
+        <!-- Imports -->
+        <option name="CLASS_COUNT_TO_USE_IMPORT_ON_DEMAND" value="999" />
+        <option name="NAMES_COUNT_TO_USE_IMPORT_ON_DEMAND" value="999" />
+        <option name="USE_FQ_CLASS_NAMES" value="false" />
+        <option name="KEEP_IMPORTS_ON_TOP" value="true" />
+        <option name="SEPARATE_IMPORTS_BY_TYPE" value="true" />
+    </codeStyleSettings>
+
+    <!-- Wrapping settings for specific code constructs -->
+    <codeStyleSettings language="JAVA">
+        <option name="METHOD_PARAMETERS_LPAREN_ON_NEXT_LINE" value="false" />
+        <option name="METHOD_PARAMETERS_RPAREN_ON_NEXT_LINE" value="false" />
+        <option name="CALL_PARAMETERS_RPAREN_ON_NEXT_LINE" value="false" />
+        <option name="ARRAY_INITIALIZER_LBRACE_ON_NEXT_LINE" value="false" />
+        <option name="ARRAY_INITIALIZER_RBRACE_ON_NEXT_LINE" value="false" />
+        <option name="ALIGN_MULTILINE_FOR" value="true" />
+        <option name="ALIGN_MULTILINE_IF" value="true" />
+        <option name="ALIGN_MULTILINE_WHILE" value="true" />
+        <option name="ALIGN_MULTILINE_DO_WHILE" value="true" />
+        <option name="ALIGN_MULTILINE_TRY" value="true" />
+        <option name="ALIGN_MULTILINE_CATCH" value="true" />
+        <option name="ALIGN_MULTILINE_SWITCH" value="true" />
+        <option name="ALIGN_MULTILINE_CONDITIONAL_OPERATOR" value="true" />
+    </codeStyleSettings>
+</code_scheme>
