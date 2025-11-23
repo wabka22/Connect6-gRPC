@@ -67,19 +67,16 @@ public class GameServer {
                 clients.put(player, responseObserver);
                 LOG.info("Player connected: " + player);
 
-                // send basic connected status
                 GameEvent status = GameEvent.newBuilder()
                         .setStatus("Connected as: " + player)
                         .build();
                 responseObserver.onNext(status);
 
                 if (clients.size() < 2) {
-                    // waiting for second player
                     responseObserver.onNext(GameEvent.newBuilder().setStatus(ServerConfig.INSTANCE.MSG_WAITING_PLAYER).build());
                     return;
                 }
 
-                // if two clients and no game started -> start
                 if (!gameStarted) {
                     try {
                         startGame();
@@ -87,7 +84,6 @@ public class GameServer {
                         LOG.log(Level.SEVERE, "Failed to start game", e);
                     }
                 } else {
-                    // if game already started and more than 2 clients, we currently support two players only.
                     responseObserver.onNext(GameEvent.newBuilder().setStatus("Server supports two players only for now").build());
                 }
             }
@@ -110,10 +106,8 @@ public class GameServer {
                     return;
                 }
 
-                // broadcast board
                 broadcastBoard();
 
-                // check game over
                 if (game.isGameOver()) {
                     String winner = game.getWinner();
                     broadcastWinner(winner);
@@ -123,13 +117,11 @@ public class GameServer {
                     return;
                 }
 
-                // maybe switch player
                 if (game.shouldSwitchPlayer()) {
                     switchCurrentPlayer();
                     game.switchPlayer();
                 }
 
-                // notify current turn
                 notifyClients(c -> c.onNext(GameEvent.newBuilder().setCurrentTurn(currentPlayer).build()));
 
                 responseObserver.onNext(MoveResult.newBuilder().setSuccess(true).setMessage("Move accepted").build());
@@ -172,7 +164,6 @@ public class GameServer {
                     responseObserver.onCompleted();
                     return;
                 }
-                // close observer to that client
                 StreamObserver<GameEvent> so = clients.remove(player);
                 rematchRequests.remove(player);
                 if (so != null) {
@@ -200,7 +191,6 @@ public class GameServer {
                     }
                 }
 
-                // if not started and enough players -> start
                 if (!gameStarted && clients.size() >= 2) {
                     try {
                         startGame();
@@ -225,21 +215,17 @@ public class GameServer {
             playerOrder = clients.keySet().toArray(new String[0]);
             currentPlayer = playerOrder[0];
 
-            // send roles
             StreamObserver<GameEvent> first = clients.get(playerOrder[0]);
             StreamObserver<GameEvent> second = clients.get(playerOrder[1]);
 
             if (first != null) first.onNext(GameEvent.newBuilder().setRole(PlayerType.BLACK.name()).build());
             if (second != null) second.onNext(GameEvent.newBuilder().setRole(PlayerType.WHITE.name()).build());
 
-            // notify started
             notifyClients(c -> c.onNext(GameEvent.newBuilder().setStatus("Game started!").build()));
 
-            // set initial turn
             StreamObserver<GameEvent> cur = clients.get(currentPlayer);
             if (cur != null) cur.onNext(GameEvent.newBuilder().setCurrentTurn(currentPlayer).build());
 
-            // broadcast initial empty board
             broadcastBoard();
 
             LOG.info("New game started between " + playerOrder[0] + " and " + playerOrder[1]);
@@ -273,7 +259,6 @@ public class GameServer {
     }
 
     private void notifyClients(java.util.function.Consumer<StreamObserver<GameEvent>> action) {
-        // iterate over copy to be safe from concurrent modification
         List<StreamObserver<GameEvent>> copy;
         synchronized (clients) {
             copy = new ArrayList<>(clients.values());

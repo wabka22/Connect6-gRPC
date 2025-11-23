@@ -1,6 +1,5 @@
 package connect6.client;
 
-import connect6.client.ClientConfig;
 import connect6.game.PlayerType;
 import connect6.grpc.*;
 import connect6.client.ui.GameClientUI;
@@ -27,7 +26,6 @@ public class GameClient extends JFrame {
     private int playerWins = 0;
     private int opponentWins = 0;
 
-    private StreamObserver<GameEvent> serverStreamObserver;
     private final AtomicReference<StreamObserver<GameEvent>> currentObserver = new AtomicReference<>(null);
 
     public static void main(String[] args) {
@@ -82,7 +80,6 @@ public class GameClient extends JFrame {
             asyncStub = Connect6GameGrpc.newStub(channel);
             blockingStub = Connect6GameGrpc.newBlockingStub(channel);
 
-            // Register and listen for server events (stream)
             StreamObserver<GameEvent> clientObserver = new StreamObserver<>() {
                 @Override
                 public void onNext(GameEvent event) {
@@ -100,7 +97,6 @@ public class GameClient extends JFrame {
                 }
             };
 
-            // call Register: server will stream events into clientObserver
             asyncStub.register(PlayerInfo.newBuilder().setName(name).build(), clientObserver);
             currentObserver.set(clientObserver);
 
@@ -112,7 +108,6 @@ public class GameClient extends JFrame {
 
     private void handleGameEvent(GameEvent event) {
         if (event.hasBoard()) {
-            // convert Board -> char[][] and update UI
             Board b = event.getBoard();
             int n = b.getRowsCount();
             char[][] board = new char[n][n];
@@ -238,7 +233,6 @@ public class GameClient extends JFrame {
     @Override
     public void dispose() {
         try {
-            // if connected, inform server
             if (blockingStub != null && playerName != null) {
                 try {
                     blockingStub.disconnect(DisconnectRequest.newBuilder().setPlayer(playerName).build());
