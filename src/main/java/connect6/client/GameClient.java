@@ -53,9 +53,6 @@ public class GameClient extends JFrame {
     ui.disconnectBtn.addActionListener(e -> dispose());
   }
 
-  // ---------------------------------------------------------------------
-  // CONNECT
-  // ---------------------------------------------------------------------
   private void onConnectClicked() {
     playerName = ui.nameField.getText().trim();
     if (playerName.isEmpty()) {
@@ -91,9 +88,6 @@ public class GameClient extends JFrame {
     }
   }
 
-  // ---------------------------------------------------------------------
-  // MOVE HANDLING
-  // ---------------------------------------------------------------------
   private void handleBoardClick(int x, int y) {
     if (!gameActive) {
       JOptionPane.showMessageDialog(this, "Game not started yet");
@@ -117,9 +111,6 @@ public class GameClient extends JFrame {
     }
   }
 
-  // ---------------------------------------------------------------------
-  // CALLBACKS (как в RMI)
-  // ---------------------------------------------------------------------
   private void updateBoard(char[][] board) {
     SwingUtilities.invokeLater(() -> ui.boardPanel.setBoard(board));
   }
@@ -189,53 +180,50 @@ public class GameClient extends JFrame {
     SwingUtilities.invokeLater(() -> ui.statusLabel.setText(msg));
   }
 
-  // ---------------------------------------------------------------------
-  // SERVER STREAM OBSERVER (замена RMI callback)
-  // ---------------------------------------------------------------------
   private class ServerEventObserver implements StreamObserver<GameEvent> {
 
     @Override
     public void onNext(GameEvent e) {
 
-        if (e.hasRole()) {
-            setPlayerRoleFromServer(e.getRole());
-            return;
+      if (e.hasRole()) {
+        setPlayerRoleFromServer(e.getRole());
+        return;
+      }
+
+      if (e.hasBoard()) {
+        Board b = e.getBoard();
+        int n = b.getRowsCount();
+        char[][] board = new char[n][n];
+
+        for (int i = 0; i < n; i++) {
+          Row row = b.getRows(i);
+          for (int j = 0; j < row.getCellsCount(); j++) {
+            String c = row.getCells(j);
+            board[i][j] = c.isEmpty() ? '.' : c.charAt(0);
+          }
         }
 
-        if (e.hasBoard()) {
-            Board b = e.getBoard();
-            int n = b.getRowsCount();
-            char[][] board = new char[n][n];
+        if (!gameActive) gameStarted();
 
-            for (int i = 0; i < n; i++) {
-                Row row = b.getRows(i);
-                for (int j = 0; j < row.getCellsCount(); j++) {
-                    String c = row.getCells(j);
-                    board[i][j] = c.isEmpty() ? '.' : c.charAt(0);
-                }
-            }
+        updateBoard(board);
+        return;
+      }
 
-            if (!gameActive) gameStarted();
+      if (e.hasCurrentTurn()) {
+        if (!gameActive) gameStarted();
+        setCurrentTurn(e.getCurrentTurn());
+        return;
+      }
 
-            updateBoard(board);
-            return;
-        }
+      if (e.hasStatus()) {
+        showError(e.getStatus());
+        return;
+      }
 
-        if (e.hasCurrentTurn()) {
-            if (!gameActive) gameStarted();
-            setCurrentTurn(e.getCurrentTurn());
-            return;
-        }
-
-        if (e.hasStatus()) {
-            showError(e.getStatus());
-            return;
-        }
-
-        if (e.hasWinner()) {
-            gameOverInternal(e.getWinner());
-            return;
-        }
+      if (e.hasWinner()) {
+        gameOverInternal(e.getWinner());
+        return;
+      }
     }
 
     @Override
@@ -249,9 +237,6 @@ public class GameClient extends JFrame {
     }
   }
 
-  // ---------------------------------------------------------------------
-  // CLEANUP
-  // ---------------------------------------------------------------------
   @Override
   public void dispose() {
     try {

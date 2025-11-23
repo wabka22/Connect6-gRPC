@@ -16,14 +16,12 @@ import java.util.logging.Logger;
 public class GameServer {
   private static final Logger LOG = Logger.getLogger(GameServer.class.getName());
 
-  private final Map<String, StreamObserver<GameEvent>> clients = new LinkedHashMap<>();
-  private final Map<String, Boolean> rematchRequests = new LinkedHashMap<>();
-
   private Connect6Game game;
+  private final Map<String, StreamObserver<GameEvent>> clients = new LinkedHashMap<>();
   private boolean gameStarted = false;
-  private String[] playerOrder = new String[0];
   private String currentPlayer;
-
+  private final Map<String, Boolean> rematchRequests = new LinkedHashMap<>();
+  private String[] playerOrder;
   private Server server;
 
   public static void main(String[] args) throws IOException, InterruptedException {
@@ -35,13 +33,11 @@ public class GameServer {
   private void start() throws IOException {
     int port = ServerConfig.INSTANCE.RMI_PORT;
     server = ServerBuilder.forPort(port).addService(new GameService()).build().start();
-    LOG.info("gRPC server started, listening on " + port);
+    LOG.info("gRPC server started on port " + port);
   }
 
   private void blockUntilShutdown() throws InterruptedException {
-    if (server != null) {
-      server.awaitTermination();
-    }
+    if (server != null) server.awaitTermination();
   }
 
   class GameService extends Connect6GameGrpc.Connect6GameImplBase {
@@ -70,8 +66,6 @@ public class GameServer {
           } catch (Exception e) {
             LOG.log(Level.SEVERE, "Failed to start game", e);
           }
-        } else {
-          sendStatus(responseObserver, "Server supports two players only for now");
         }
       }
     }
@@ -112,32 +106,6 @@ public class GameServer {
     }
 
     @Override
-    public void requestRematch(
-        RematchRequest request, StreamObserver<MoveResult> responseObserver) {
-      String player = request.getPlayer();
-      synchronized (clients) {
-        if (!clients.containsKey(player)) {
-          sendMoveResult(responseObserver, false, "You are not connected");
-          return;
-        }
-
-        rematchRequests.put(player, true);
-
-        if (rematchRequests.size() >= 2 && rematchRequests.values().stream().allMatch(b -> b)) {
-          LOG.info("Starting rematch...");
-          try {
-            startGame();
-          } catch (Exception e) {
-            LOG.log(Level.SEVERE, "Rematch start failed", e);
-            sendMoveResult(responseObserver, false, "Rematch failed");
-            return;
-          }
-        }
-        sendMoveResult(responseObserver, true, "Rematch request received");
-      }
-    }
-
-    @Override
     public void disconnect(DisconnectRequest request, StreamObserver<MoveResult> responseObserver) {
       String player = request.getPlayer();
       synchronized (clients) {
@@ -152,19 +120,30 @@ public class GameServer {
 
         LOG.info("Player disconnected: " + player);
 
-        if (gameStarted) {
-          handleDisconnectDuringGame();
-        }
-
-        if (!gameStarted && clients.size() >= 2) {
-          try {
-            startGame();
-          } catch (Exception e) {
-            LOG.log(Level.SEVERE, "Start after disconnect failed", e);
-          }
-        }
+        if (gameStarted) handleDisconnectDuringGame();
+        if (!gameStarted && clients.size() >= 2) startGame();
 
         sendMoveResult(responseObserver, true, "Disconnected");
+      }
+    }
+
+    @Override
+    public void requestRematch(
+        RematchRequest request, StreamObserver<MoveResult> responseObserver) {
+      String player = request.getPlayer();
+      synchronized (clients) {
+        if (!clients.containsKey(player)) {
+          sendMoveResult(responseObserver, false, "You are not connected");
+          return;
+        }
+
+        rematchRequests.put(player, true);
+
+        if (rematchRequests.size() >= 2 && rematchRequests.values().stream().allMatch(b -> b)) {
+          LOG.info("Starting rematch...");
+          startGame();
+        }
+        sendMoveResult(responseObserver, true, "Rematch request received");
       }
     }
 
@@ -182,25 +161,27 @@ public class GameServer {
   }
 
   private void startGame() {
-    synchronized (clients) {
-      if (clients.size() < 2) return;
+    if (clients.size() < 2) return;
 
-      game = new Connect6Game();
-      gameStarted = true;
-      rematchRequests.clear();
+    game = new Connect6Game();
+    gameStarted = true;
+    rematchRequests.clear();
 
-      playerOrder = clients.keySet().toArray(new String[0]);
-      currentPlayer = playerOrder[0];
+    playerOrder = clients.keySet().toArray(new String[0]);
+    currentPlayer = playerOrder[0];
 
-      sendRole(playerOrder[0], PlayerType.BLACK);
-      sendRole(playerOrder[1], PlayerType.WHITE);
+    clients
+        .get(playerOrder[0])
+        .onNext(GameEvent.newBuilder().setRole(PlayerType.BLACK.name()).build());
+    clients
+        .get(playerOrder[1])
+        .onNext(GameEvent.newBuilder().setRole(PlayerType.WHITE.name()).build());
 
-      notifyClients(c -> sendStatus(c, "Game started!"));
-      sendCurrentTurn(currentPlayer);
+    notifyClients(c -> sendStatus(c, "Game started!"));
+    sendCurrentTurn(currentPlayer);
+    broadcastBoard();
 
-      broadcastBoard();
-      LOG.info("New game started between " + playerOrder[0] + " and " + playerOrder[1]);
-    }
+    LOG.info("New game started between " + playerOrder[0] + " and " + playerOrder[1]);
   }
 
   private void endGame() {
@@ -218,12 +199,13 @@ public class GameServer {
 
   private void broadcastBoard() {
     if (game == null) return;
-    Board boardProto = boardProtoFromChar(game.getBoard());
-    notifyClients(c -> c.onNext(GameEvent.newBuilder().setBoard(boardProto).build()));
+    char[][] boardCopy = game.getBoard();
+    notifyClients(
+        c -> c.onNext(GameEvent.newBuilder().setBoard(boardProtoFromChar(boardCopy)).build()));
   }
 
   private void broadcastWinner(String winner) {
-    notifyClients(c -> sendWinner(c, winner));
+    notifyClients(c -> safeSendWinner(c, winner));
   }
 
   private void notifyClients(Consumer<StreamObserver<GameEvent>> action) {
@@ -244,9 +226,7 @@ public class GameServer {
     Board.Builder b = Board.newBuilder();
     for (char[] rowArr : board) {
       Row.Builder row = Row.newBuilder();
-      for (char cell : rowArr) {
-        row.addCells(String.valueOf(cell));
-      }
+      for (char cell : rowArr) row.addCells(String.valueOf(cell));
       b.addRows(row);
     }
     return b.build();
@@ -256,31 +236,9 @@ public class GameServer {
     safeSend(obs, msg);
   }
 
-  private void sendMoveResult(StreamObserver<MoveResult> obs, boolean success, String msg) {
-    if (obs != null) {
-      obs.onNext(MoveResult.newBuilder().setSuccess(success).setMessage(msg).build());
-      obs.onCompleted();
-    }
-  }
-
-  private void sendRole(String player, PlayerType role) {
-    StreamObserver<GameEvent> obs = clients.get(player);
-    if (obs != null) {
-      obs.onNext(GameEvent.newBuilder().setRole(role.name()).build());
-    }
-  }
-
   private void sendCurrentTurn(String player) {
     StreamObserver<GameEvent> obs = clients.get(player);
-    if (obs != null) {
-      obs.onNext(GameEvent.newBuilder().setCurrentTurn(player).build());
-    }
-  }
-
-  private void sendWinner(StreamObserver<GameEvent> obs, String winner) {
-    if (obs != null) {
-      obs.onNext(GameEvent.newBuilder().setWinner(winner).build());
-    }
+    if (obs != null) obs.onNext(GameEvent.newBuilder().setCurrentTurn(player).build());
   }
 
   private void safeSend(StreamObserver<GameEvent> obs, String msg) {
@@ -298,6 +256,13 @@ public class GameServer {
         obs.onNext(GameEvent.newBuilder().setWinner(winner).build());
       } catch (Exception ignored) {
       }
+    }
+  }
+
+  private void sendMoveResult(StreamObserver<MoveResult> obs, boolean success, String msg) {
+    if (obs != null) {
+      obs.onNext(MoveResult.newBuilder().setSuccess(success).setMessage(msg).build());
+      obs.onCompleted();
     }
   }
 }
