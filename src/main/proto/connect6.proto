@@ -40,11 +40,13 @@ message Board {
 message GameEvent {
     oneof payload {
         Board board = 1;
-        string winner = 2;
-        string currentTurn = 3;
-        string role = 4;
+        string status = 2;
+        string winner = 3;
+        string currentTurn = 4;
+        string role = 5;
     }
 }
+
 
 service Connect6Game {
     rpc Register(PlayerInfo) returns (stream GameEvent);
