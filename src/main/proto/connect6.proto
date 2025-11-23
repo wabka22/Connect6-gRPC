@@ -6,63 +6,49 @@ option java_multiple_files = true;
 option java_package = "connect6.grpc";
 option java_outer_classname = "Connect6Proto";
 
-// Messages
-
-message Empty {}
-
 message PlayerInfo {
-  string name = 1;
+    string name = 1;
 }
 
 message Move {
-  string player = 1;
-  int32 x = 2;
-  int32 y = 3;
+    string player = 1;
+    int32 x = 2;
+    int32 y = 3;
 }
 
 message MoveResult {
-  bool success = 1;
-  string message = 2;
+    bool success = 1;
+    string message = 2;
 }
 
 message RematchRequest {
-  string player = 1;
+    string player = 1;
 }
 
 message DisconnectRequest {
-  string player = 1;
+    string player = 1;
 }
 
 message Row {
-  repeated string cells = 1;
+    repeated string cells = 1;
 }
 
 message Board {
-  repeated Row rows = 1;
+    repeated Row rows = 1;
 }
 
-// GameEvent: server -> client stream
 message GameEvent {
-  oneof payload {
-    Board board = 1;
-    string status = 2;
-    string winner = 3;
-    string currentTurn = 4;
-    string role = 5;
-  }
+    oneof payload {
+        Board board = 1;
+        string winner = 2;
+        string currentTurn = 3;
+        string role = 4;
+    }
 }
 
-// Service
 service Connect6Game {
-  // Register: client calls once, server returns a stream of GameEvent
-  rpc Register(PlayerInfo) returns (stream GameEvent);
-
-  // Make a move (unary)
-  rpc MakeMove(Move) returns (MoveResult);
-
-  // Request rematch (unary)
-  rpc RequestRematch(RematchRequest) returns (MoveResult);
-
-  // Inform server that client disconnects (unary)
-  rpc Disconnect(DisconnectRequest) returns (MoveResult);
+    rpc Register(PlayerInfo) returns (stream GameEvent);
+    rpc MakeMove(Move) returns (MoveResult);
+    rpc RequestRematch(RematchRequest) returns (MoveResult);
+    rpc Disconnect(DisconnectRequest) returns (MoveResult);
 }

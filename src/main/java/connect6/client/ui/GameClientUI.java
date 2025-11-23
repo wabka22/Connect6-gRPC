@@ -17,8 +17,8 @@ public class GameClientUI {
   public final JLabel scoreLabel = new JLabel();
   public final GameBoardPanel boardPanel = new GameBoardPanel(19);
 
-  private static final Color BACKGROUND = new Color(40, 44, 52);
-  private static final Color PANEL_BG = new Color(50, 55, 65);
+  private static final Color BACKGROUND = new Color(77, 38, 0);
+  private static final Color PANEL_BG = new Color(102, 51, 0);
   private static final Color PRIMARY = new Color(88, 133, 175);
   private static final Color TEXT_COLOR = new Color(230, 230, 230);
 
