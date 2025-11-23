@@ -9,6 +9,7 @@ import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
 import java.io.IOException;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -17,6 +18,7 @@ public class GameServer {
 
   private final Map<String, StreamObserver<GameEvent>> clients = new LinkedHashMap<>();
   private final Map<String, Boolean> rematchRequests = new LinkedHashMap<>();
+
   private Connect6Game game;
   private boolean gameStarted = false;
   private String[] playerOrder = new String[0];
@@ -49,22 +51,16 @@ public class GameServer {
       String player = request.getName();
       synchronized (clients) {
         if (clients.containsKey(player)) {
-          // send error status and complete
-          GameEvent err = GameEvent.newBuilder().setStatus("Name already in use").build();
-          responseObserver.onNext(err);
-          responseObserver.onCompleted();
+          sendStatus(responseObserver, "Name already in use");
           return;
         }
 
         clients.put(player, responseObserver);
         LOG.info("Player connected: " + player);
-
-        GameEvent status = GameEvent.newBuilder().setStatus("Connected as: " + player).build();
-        responseObserver.onNext(status);
+        sendStatus(responseObserver, "Connected as: " + player);
 
         if (clients.size() < 2) {
-          responseObserver.onNext(
-              GameEvent.newBuilder().setStatus(ServerConfig.INSTANCE.MSG_WAITING_PLAYER).build());
+          sendStatus(responseObserver, ServerConfig.INSTANCE.MSG_WAITING_PLAYER);
           return;
         }
 
@@ -75,31 +71,23 @@ public class GameServer {
             LOG.log(Level.SEVERE, "Failed to start game", e);
           }
         } else {
-          responseObserver.onNext(
-              GameEvent.newBuilder().setStatus("Server supports two players only for now").build());
+          sendStatus(responseObserver, "Server supports two players only for now");
         }
       }
     }
 
     @Override
     public void makeMove(Move request, StreamObserver<MoveResult> responseObserver) {
-      String player = request.getPlayer();
       synchronized (GameServer.this) {
+        String player = request.getPlayer();
         if (!gameStarted || !player.equals(currentPlayer)) {
-          responseObserver.onNext(
-              MoveResult.newBuilder()
-                  .setSuccess(false)
-                  .setMessage("Not your turn or game not started")
-                  .build());
-          responseObserver.onCompleted();
+          sendMoveResult(responseObserver, false, "Not your turn or game not started");
           return;
         }
 
-        PlaceResult r = game.placeStone(request.getX(), request.getY());
-        if (r != PlaceResult.OK) {
-          responseObserver.onNext(
-              MoveResult.newBuilder().setSuccess(false).setMessage("Invalid move: " + r).build());
-          responseObserver.onCompleted();
+        PlaceResult result = game.placeStone(request.getX(), request.getY());
+        if (result != PlaceResult.OK) {
+          sendMoveResult(responseObserver, false, "Invalid move: " + result);
           return;
         }
 
@@ -109,12 +97,7 @@ public class GameServer {
           String winner = game.getWinner();
           broadcastWinner(winner);
           endGame();
-          responseObserver.onNext(
-              MoveResult.newBuilder()
-                  .setSuccess(true)
-                  .setMessage("Move accepted; game over")
-                  .build());
-          responseObserver.onCompleted();
+          sendMoveResult(responseObserver, true, "Move accepted; game over");
           return;
         }
 
@@ -124,10 +107,7 @@ public class GameServer {
         }
 
         notifyClients(c -> c.onNext(GameEvent.newBuilder().setCurrentTurn(currentPlayer).build()));
-
-        responseObserver.onNext(
-            MoveResult.newBuilder().setSuccess(true).setMessage("Move accepted").build());
-        responseObserver.onCompleted();
+        sendMoveResult(responseObserver, true, "Move accepted");
       }
     }
 
@@ -137,33 +117,23 @@ public class GameServer {
       String player = request.getPlayer();
       synchronized (clients) {
         if (!clients.containsKey(player)) {
-          responseObserver.onNext(
-              MoveResult.newBuilder()
-                  .setSuccess(false)
-                  .setMessage("You are not connected")
-                  .build());
-          responseObserver.onCompleted();
+          sendMoveResult(responseObserver, false, "You are not connected");
           return;
         }
+
         rematchRequests.put(player, true);
+
         if (rematchRequests.size() >= 2 && rematchRequests.values().stream().allMatch(b -> b)) {
           LOG.info("Starting rematch...");
           try {
             startGame();
           } catch (Exception e) {
             LOG.log(Level.SEVERE, "Rematch start failed", e);
-            responseObserver.onNext(
-                MoveResult.newBuilder().setSuccess(false).setMessage("Rematch failed").build());
-            responseObserver.onCompleted();
+            sendMoveResult(responseObserver, false, "Rematch failed");
             return;
           }
         }
-        responseObserver.onNext(
-            MoveResult.newBuilder()
-                .setSuccess(true)
-                .setMessage("Rematch request received")
-                .build());
-        responseObserver.onCompleted();
+        sendMoveResult(responseObserver, true, "Rematch request received");
       }
     }
 
@@ -172,40 +142,18 @@ public class GameServer {
       String player = request.getPlayer();
       synchronized (clients) {
         if (!clients.containsKey(player)) {
-          responseObserver.onNext(
-              MoveResult.newBuilder().setSuccess(false).setMessage("Not connected").build());
-          responseObserver.onCompleted();
+          sendMoveResult(responseObserver, false, "Not connected");
           return;
         }
+
         StreamObserver<GameEvent> so = clients.remove(player);
         rematchRequests.remove(player);
-        if (so != null) {
-          try {
-            so.onNext(GameEvent.newBuilder().setStatus("Server: disconnecting").build());
-            so.onCompleted();
-          } catch (Exception ignored) {
-          }
-        }
+        safeSend(so, "Server: disconnecting");
 
         LOG.info("Player disconnected: " + player);
 
         if (gameStarted) {
-          if (clients.size() == 1) {
-            // remaining player wins by opponent disconnect
-            String remaining = clients.keySet().iterator().next();
-            StreamObserver<GameEvent> remainingObs = clients.get(remaining);
-            if (remainingObs != null) {
-              remainingObs.onNext(
-                  GameEvent.newBuilder()
-                      .setStatus(ServerConfig.INSTANCE.MSG_PLAYER_DISCONNECTED)
-                      .build());
-              remainingObs.onNext(
-                  GameEvent.newBuilder().setWinner("OPPONENT_DISCONNECTED").build());
-            }
-            endGame();
-          } else if (clients.size() < 2) {
-            endGame();
-          }
+          handleDisconnectDuringGame();
         }
 
         if (!gameStarted && clients.size() >= 2) {
@@ -216,9 +164,19 @@ public class GameServer {
           }
         }
 
-        responseObserver.onNext(
-            MoveResult.newBuilder().setSuccess(true).setMessage("Disconnected").build());
-        responseObserver.onCompleted();
+        sendMoveResult(responseObserver, true, "Disconnected");
+      }
+    }
+
+    private void handleDisconnectDuringGame() {
+      if (clients.size() == 1) {
+        String remaining = clients.keySet().iterator().next();
+        StreamObserver<GameEvent> remainingObs = clients.get(remaining);
+        safeSend(remainingObs, ServerConfig.INSTANCE.MSG_PLAYER_DISCONNECTED);
+        safeSendWinner(remainingObs, "OPPONENT_DISCONNECTED");
+        endGame();
+      } else if (clients.size() < 2) {
+        endGame();
       }
     }
   }
@@ -226,6 +184,7 @@ public class GameServer {
   private void startGame() {
     synchronized (clients) {
       if (clients.size() < 2) return;
+
       game = new Connect6Game();
       gameStarted = true;
       rematchRequests.clear();
@@ -233,21 +192,13 @@ public class GameServer {
       playerOrder = clients.keySet().toArray(new String[0]);
       currentPlayer = playerOrder[0];
 
-      StreamObserver<GameEvent> first = clients.get(playerOrder[0]);
-      StreamObserver<GameEvent> second = clients.get(playerOrder[1]);
+      sendRole(playerOrder[0], PlayerType.BLACK);
+      sendRole(playerOrder[1], PlayerType.WHITE);
 
-      if (first != null)
-        first.onNext(GameEvent.newBuilder().setRole(PlayerType.BLACK.name()).build());
-      if (second != null)
-        second.onNext(GameEvent.newBuilder().setRole(PlayerType.WHITE.name()).build());
-
-      notifyClients(c -> c.onNext(GameEvent.newBuilder().setStatus("Game started!").build()));
-
-      StreamObserver<GameEvent> cur = clients.get(currentPlayer);
-      if (cur != null) cur.onNext(GameEvent.newBuilder().setCurrentTurn(currentPlayer).build());
+      notifyClients(c -> sendStatus(c, "Game started!"));
+      sendCurrentTurn(currentPlayer);
 
       broadcastBoard();
-
       LOG.info("New game started between " + playerOrder[0] + " and " + playerOrder[1]);
     }
   }
@@ -261,25 +212,21 @@ public class GameServer {
   }
 
   private void switchCurrentPlayer() {
-    if (playerOrder == null || playerOrder.length < 2) return;
+    if (playerOrder.length < 2) return;
     currentPlayer = currentPlayer.equals(playerOrder[0]) ? playerOrder[1] : playerOrder[0];
   }
 
   private void broadcastBoard() {
     if (game == null) return;
-    char[][] boardCopy = game.getBoard();
-    GameEvent boardEvent = GameEvent.newBuilder().setBoard(boardProtoFromChar(boardCopy)).build();
-    notifyClients(c -> c.onNext(boardEvent));
+    Board boardProto = boardProtoFromChar(game.getBoard());
+    notifyClients(c -> c.onNext(GameEvent.newBuilder().setBoard(boardProto).build()));
   }
 
   private void broadcastWinner(String winner) {
-    notifyClients(
-        c -> {
-          c.onNext(GameEvent.newBuilder().setWinner(winner).build());
-        });
+    notifyClients(c -> sendWinner(c, winner));
   }
 
-  private void notifyClients(java.util.function.Consumer<StreamObserver<GameEvent>> action) {
+  private void notifyClients(Consumer<StreamObserver<GameEvent>> action) {
     List<StreamObserver<GameEvent>> copy;
     synchronized (clients) {
       copy = new ArrayList<>(clients.values());
@@ -288,20 +235,69 @@ public class GameServer {
       try {
         action.accept(c);
       } catch (Exception e) {
-        LOG.log(Level.WARNING, "Failed notify client", e);
+        LOG.log(Level.WARNING, "Failed to notify client", e);
       }
     }
   }
 
   private Board boardProtoFromChar(char[][] board) {
     Board.Builder b = Board.newBuilder();
-    for (int r = 0; r < board.length; r++) {
+    for (char[] rowArr : board) {
       Row.Builder row = Row.newBuilder();
-      for (int c = 0; c < board[r].length; c++) {
-        row.addCells(String.valueOf(board[r][c]));
+      for (char cell : rowArr) {
+        row.addCells(String.valueOf(cell));
       }
       b.addRows(row);
     }
     return b.build();
+  }
+
+  private void sendStatus(StreamObserver<GameEvent> obs, String msg) {
+    safeSend(obs, msg);
+  }
+
+  private void sendMoveResult(StreamObserver<MoveResult> obs, boolean success, String msg) {
+    if (obs != null) {
+      obs.onNext(MoveResult.newBuilder().setSuccess(success).setMessage(msg).build());
+      obs.onCompleted();
+    }
+  }
+
+  private void sendRole(String player, PlayerType role) {
+    StreamObserver<GameEvent> obs = clients.get(player);
+    if (obs != null) {
+      obs.onNext(GameEvent.newBuilder().setRole(role.name()).build());
+    }
+  }
+
+  private void sendCurrentTurn(String player) {
+    StreamObserver<GameEvent> obs = clients.get(player);
+    if (obs != null) {
+      obs.onNext(GameEvent.newBuilder().setCurrentTurn(player).build());
+    }
+  }
+
+  private void sendWinner(StreamObserver<GameEvent> obs, String winner) {
+    if (obs != null) {
+      obs.onNext(GameEvent.newBuilder().setWinner(winner).build());
+    }
+  }
+
+  private void safeSend(StreamObserver<GameEvent> obs, String msg) {
+    if (obs != null) {
+      try {
+        obs.onNext(GameEvent.newBuilder().setStatus(msg).build());
+      } catch (Exception ignored) {
+      }
+    }
+  }
+
+  private void safeSendWinner(StreamObserver<GameEvent> obs, String winner) {
+    if (obs != null) {
+      try {
+        obs.onNext(GameEvent.newBuilder().setWinner(winner).build());
+      } catch (Exception ignored) {
+      }
+    }
   }
 }

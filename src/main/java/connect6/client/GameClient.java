@@ -7,7 +7,6 @@ import connect6.grpc.*;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.stub.StreamObserver;
-import java.util.concurrent.atomic.AtomicReference;
 import javax.swing.*;
 
 public class GameClient extends JFrame {
@@ -18,15 +17,14 @@ public class GameClient extends JFrame {
 
   private String playerName;
   private PlayerType playerRole;
+
   private boolean myTurn = false;
   private boolean gameActive = false;
 
-  private final GameClientUI ui = new GameClientUI();
   private int playerWins = 0;
   private int opponentWins = 0;
 
-  private final AtomicReference<StreamObserver<GameEvent>> currentObserver =
-      new AtomicReference<>(null);
+  private final GameClientUI ui = new GameClientUI();
 
   public static void main(String[] args) {
     SwingUtilities.invokeLater(() -> new GameClient().setVisible(true));
@@ -40,11 +38,7 @@ public class GameClient extends JFrame {
 
     setTitle("Connect6");
 
-    if (Images.ICON != null) {
-      setIconImage(Images.ICON.getImage());
-    } else {
-      System.err.println("Icon not found!");
-    }
+    if (Images.ICON != null) setIconImage(Images.ICON.getImage());
 
     setDefaultCloseOperation(EXIT_ON_CLOSE);
     setContentPane(ui.createMainPanel(this));
@@ -53,20 +47,25 @@ public class GameClient extends JFrame {
 
     ui.scoreLabel.setText(getScoreText());
     ui.disconnectBtn.setEnabled(false);
-    ui.boardPanel.setClickListener(this::handleBoardClick);
 
+    ui.boardPanel.setClickListener(this::handleBoardClick);
     ui.connectBtn.addActionListener(e -> onConnectClicked());
-    ui.disconnectBtn.addActionListener(e -> onDisconnectClicked());
+    ui.disconnectBtn.addActionListener(e -> dispose());
   }
 
+  // ---------------------------------------------------------------------
+  // CONNECT
+  // ---------------------------------------------------------------------
   private void onConnectClicked() {
     playerName = ui.nameField.getText().trim();
     if (playerName.isEmpty()) {
       JOptionPane.showMessageDialog(this, "Enter player name");
       return;
     }
+
     connectToServer(playerName);
-    if (channel != null && !channel.isShutdown()) {
+
+    if (channel != null) {
       ui.connectBtn.setEnabled(false);
       ui.disconnectBtn.setEnabled(true);
     }
@@ -79,182 +78,191 @@ public class GameClient extends JFrame {
                   ClientConfig.CFG.SERVER_HOST, ClientConfig.CFG.SERVER_PORT)
               .usePlaintext()
               .build();
+
       asyncStub = Connect6GameGrpc.newStub(channel);
       blockingStub = Connect6GameGrpc.newBlockingStub(channel);
 
-      StreamObserver<GameEvent> clientObserver =
-          new StreamObserver<>() {
-            @Override
-            public void onNext(GameEvent event) {
-              handleGameEvent(event);
-            }
+      asyncStub.register(PlayerInfo.newBuilder().setName(name).build(), new ServerEventObserver());
 
-            @Override
-            public void onError(Throwable t) {
-              SwingUtilities.invokeLater(
-                  () -> ui.statusLabel.setText("Connection error: " + t.getMessage()));
-            }
+      ui.statusLabel.setText("Connected as: " + name);
 
-            @Override
-            public void onCompleted() {
-              SwingUtilities.invokeLater(() -> ui.statusLabel.setText("Server closed connection"));
-            }
-          };
-
-      asyncStub.register(PlayerInfo.newBuilder().setName(name).build(), clientObserver);
-      currentObserver.set(clientObserver);
-
-      SwingUtilities.invokeLater(() -> ui.statusLabel.setText("Connected as: " + name));
     } catch (Exception e) {
       JOptionPane.showMessageDialog(this, "Connection failed: " + e.getMessage());
     }
   }
 
-  private void handleGameEvent(GameEvent event) {
-    if (event.hasBoard()) {
-      Board b = event.getBoard();
-      int n = b.getRowsCount();
-      char[][] board = new char[n][n];
-      for (int i = 0; i < n; i++) {
-        Row row = b.getRows(i);
-        for (int j = 0; j < row.getCellsCount(); j++) {
-          String cell = row.getCells(j);
-          board[i][j] = (cell.length() > 0) ? cell.charAt(0) : '.';
-        }
-      }
-      SwingUtilities.invokeLater(() -> ui.boardPanel.setBoard(board));
-      return;
-    }
-
-    if (event.hasStatus()) {
-      String s = event.getStatus();
-      SwingUtilities.invokeLater(() -> ui.statusLabel.setText(s));
-      return;
-    }
-
-    if (event.hasRole()) {
-      String role = event.getRole();
-      SwingUtilities.invokeLater(
-          () -> {
-            playerRole = PlayerType.valueOf(role);
-            ui.roleLabel.setText("Role: " + playerRole);
-            ui.statusLabel.setText("Connected as: " + playerName + " (" + playerRole + ")");
-          });
-      return;
-    }
-
-    if (event.hasCurrentTurn()) {
-      String player = event.getCurrentTurn();
-      myTurn = player.equals(playerName);
-      SwingUtilities.invokeLater(
-          () ->
-              ui.turnLabel.setText(myTurn ? "Your turn (" + playerRole + ")" : "Opponent's turn"));
-      gameActive = true;
-      return;
-    }
-
-    if (event.hasWinner()) {
-      String winner = event.getWinner();
-      SwingUtilities.invokeLater(() -> handleGameOver(winner));
-    }
-  }
-
+  // ---------------------------------------------------------------------
+  // MOVE HANDLING
+  // ---------------------------------------------------------------------
   private void handleBoardClick(int x, int y) {
     if (!gameActive) {
       JOptionPane.showMessageDialog(this, "Game not started yet");
       return;
     }
+
     if (!myTurn) {
       JOptionPane.showMessageDialog(this, "Not your turn");
       return;
     }
+
     try {
-      Move mv = Move.newBuilder().setPlayer(playerName).setX(x).setY(y).build();
-      MoveResult res = blockingStub.makeMove(mv);
-      if (!res.getSuccess()) {
+      MoveResult res =
+          blockingStub.makeMove(Move.newBuilder().setPlayer(playerName).setX(x).setY(y).build());
+
+      if (!res.getSuccess())
         JOptionPane.showMessageDialog(this, "Move failed: " + res.getMessage());
-      }
+
     } catch (Exception e) {
       JOptionPane.showMessageDialog(this, "Move failed: " + e.getMessage());
     }
   }
 
-  private void handleGameOver(String winner) {
-    gameActive = false;
-    myTurn = false;
-
-    if (winner.equals(playerRole != null ? playerRole.name() : "")
-        || "OPPONENT_DISCONNECTED".equals(winner)) playerWins++;
-    else opponentWins++;
-
-    ui.scoreLabel.setText(getScoreText());
-
-    if ("OPPONENT_DISCONNECTED".equals(winner)) {
-      ui.statusLabel.setText("Opponent disconnected. Waiting for new game...");
-      playerRole = null;
-      return;
-    }
-
-    int option =
-        JOptionPane.showConfirmDialog(
-            this,
-            "Game Over! Winner: " + winner + "\nDo you want to play again?",
-            "Game Over",
-            JOptionPane.YES_NO_OPTION);
-
-    if (option == JOptionPane.YES_OPTION) {
-      try {
-        MoveResult r =
-            blockingStub.requestRematch(RematchRequest.newBuilder().setPlayer(playerName).build());
-        if (!r.getSuccess()) {
-          showError("Rematch request failed: " + r.getMessage());
-        }
-      } catch (Exception e) {
-        showError("Rematch request failed: " + e.getMessage());
-      }
-    }
+  // ---------------------------------------------------------------------
+  // CALLBACKS (как в RMI)
+  // ---------------------------------------------------------------------
+  private void updateBoard(char[][] board) {
+    SwingUtilities.invokeLater(() -> ui.boardPanel.setBoard(board));
   }
 
-  private void onDisconnectClicked() {
-    try {
-      if (blockingStub != null && playerName != null) {
-        blockingStub.disconnect(DisconnectRequest.newBuilder().setPlayer(playerName).build());
-      }
-      if (channel != null) {
-        channel.shutdownNow();
-      }
-    } catch (Exception ignored) {
-    } finally {
-      dispose();
-    }
-  }
-
-  private void showError(String message) {
+  private void setPlayerRoleFromServer(String role) {
     SwingUtilities.invokeLater(
         () -> {
-          if (message == null || message.isEmpty()) {
-            String roleText = (playerRole != null) ? " (" + playerRole + ")" : "";
-            ui.statusLabel.setText("Connected as: " + playerName + roleText);
-          } else {
-            ui.statusLabel.setText(message);
+          playerRole = PlayerType.valueOf(role);
+          ui.roleLabel.setText("Role: " + playerRole);
+          ui.statusLabel.setText("Connected as: " + playerName + " (" + playerRole + ")");
+        });
+  }
+
+  private void setCurrentTurn(String player) {
+    SwingUtilities.invokeLater(
+        () -> {
+          myTurn = player.equals(playerName);
+          ui.turnLabel.setText(myTurn ? "Your turn (" + playerRole + ")" : "Opponent's turn");
+        });
+  }
+
+  private void gameStarted() {
+    SwingUtilities.invokeLater(
+        () -> {
+          gameActive = true;
+          ui.statusLabel.setText("Game started!");
+        });
+  }
+
+  private void gameOverInternal(String winner) {
+    SwingUtilities.invokeLater(
+        () -> {
+          gameActive = false;
+          myTurn = false;
+
+          if (winner.equals(playerRole != null ? playerRole.name() : "")
+              || winner.equals("OPPONENT_DISCONNECTED")) playerWins++;
+          else opponentWins++;
+
+          ui.scoreLabel.setText(getScoreText());
+
+          if (winner.equals("OPPONENT_DISCONNECTED")) {
+            ui.statusLabel.setText("Opponent disconnected. Waiting for new game...");
+            playerRole = null;
+            return;
+          }
+
+          int opt =
+              JOptionPane.showConfirmDialog(
+                  this,
+                  "Game Over! Winner: " + winner + "\nPlay again?",
+                  "Game Over",
+                  JOptionPane.YES_NO_OPTION);
+
+          if (opt == JOptionPane.YES_OPTION) {
+            try {
+              blockingStub.requestRematch(
+                  RematchRequest.newBuilder().setPlayer(playerName).build());
+            } catch (Exception e) {
+              showError("Rematch request failed: " + e.getMessage());
+            }
           }
         });
   }
 
+  private void showError(String msg) {
+    SwingUtilities.invokeLater(() -> ui.statusLabel.setText(msg));
+  }
+
+  // ---------------------------------------------------------------------
+  // SERVER STREAM OBSERVER (замена RMI callback)
+  // ---------------------------------------------------------------------
+  private class ServerEventObserver implements StreamObserver<GameEvent> {
+
+    @Override
+    public void onNext(GameEvent e) {
+
+        if (e.hasRole()) {
+            setPlayerRoleFromServer(e.getRole());
+            return;
+        }
+
+        if (e.hasBoard()) {
+            Board b = e.getBoard();
+            int n = b.getRowsCount();
+            char[][] board = new char[n][n];
+
+            for (int i = 0; i < n; i++) {
+                Row row = b.getRows(i);
+                for (int j = 0; j < row.getCellsCount(); j++) {
+                    String c = row.getCells(j);
+                    board[i][j] = c.isEmpty() ? '.' : c.charAt(0);
+                }
+            }
+
+            if (!gameActive) gameStarted();
+
+            updateBoard(board);
+            return;
+        }
+
+        if (e.hasCurrentTurn()) {
+            if (!gameActive) gameStarted();
+            setCurrentTurn(e.getCurrentTurn());
+            return;
+        }
+
+        if (e.hasStatus()) {
+            showError(e.getStatus());
+            return;
+        }
+
+        if (e.hasWinner()) {
+            gameOverInternal(e.getWinner());
+            return;
+        }
+    }
+
+    @Override
+    public void onError(Throwable t) {
+      showError("Connection error: " + t.getMessage());
+    }
+
+    @Override
+    public void onCompleted() {
+      showError("Server closed connection");
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // CLEANUP
+  // ---------------------------------------------------------------------
   @Override
   public void dispose() {
     try {
       if (blockingStub != null && playerName != null) {
-        try {
-          blockingStub.disconnect(DisconnectRequest.newBuilder().setPlayer(playerName).build());
-        } catch (Exception ignored) {
-        }
+        blockingStub.disconnect(DisconnectRequest.newBuilder().setPlayer(playerName).build());
       }
-      if (channel != null) {
-        channel.shutdownNow();
-      }
+      if (channel != null) channel.shutdownNow();
+
     } catch (Exception ignored) {
     }
+
     super.dispose();
     System.exit(0);
   }
