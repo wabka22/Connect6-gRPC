@@ -14,6 +14,6 @@ cd Connect6-RMI
 mvn clean package
 ```
 ```bash
-mvn spotless:appl
+mvn spotless:apply
 ```
 

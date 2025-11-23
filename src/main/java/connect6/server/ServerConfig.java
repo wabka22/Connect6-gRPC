@@ -1,9 +1,9 @@
 package connect6.server;
 
 public enum ServerConfig {
-    INSTANCE;
+  INSTANCE;
 
-    public final int RMI_PORT = 50051;
-    public final String MSG_WAITING_PLAYER = "Waiting for another player...";
-    public final String MSG_PLAYER_DISCONNECTED = "Opponent disconnected";
+  public final int RMI_PORT = 50051;
+  public final String MSG_WAITING_PLAYER = "Waiting for another player...";
+  public final String MSG_PLAYER_DISCONNECTED = "Opponent disconnected";
 }
