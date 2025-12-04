@@ -8,7 +8,7 @@
 git clone https://github.com/wabka22/Connect6-gRPC.git
 ```
 ```bash
-cd Connect6-RMI
+cd Connect6-gRPC
 ```
 ```bash
 mvn clean package
